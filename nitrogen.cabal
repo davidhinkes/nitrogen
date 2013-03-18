@@ -6,13 +6,31 @@ license:             MIT
 license-file:        LICENSE
 author:              David Hinkes
 maintainer:          david.hinkes@gmail.com
--- copyright:           
+copyright:           2013
 category:            Network
 build-type:          Simple
 cabal-version:       >=1.8
 
+executable nitrogen-server
+  hs-source-dirs: server
+  main-is: Main.hs
+  build-depends: nitrogen,
+                 base ==4.6.*,
+                 hstack,
+                 simpleargs,
+                 snap-server,
+                 stm
+
 library
-  -- exposed-modules:     
-  -- other-modules:       
+  exposed-modules: Network.Nitrogen,
+                   Network.Nitrogen.RPC,
+                   Network.Nitrogen.Types
+  hs-source-dirs: src       
   build-depends: base ==4.6.*,
-                 hstack
+                 bytestring,
+                 cereal,
+                 containers,
+                 hstack,
+                 stm,
+                 time,
+                 transformers
