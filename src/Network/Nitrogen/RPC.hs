@@ -1,9 +1,8 @@
 module Network.Nitrogen.RPC  where
 
+import Data.Word
 import Network.Hstack
 import Network.Nitrogen.Types
-
-type Port = Integer
 
 type IdentifyRequest = (LogicalTime, Port)
 

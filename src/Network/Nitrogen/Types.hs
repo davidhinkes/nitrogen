@@ -15,3 +15,6 @@ instance Serialize Endpoint where
     host <- get
     port <- get
     return $ Endpoint host port 
+
+instance Show Endpoint where
+  show (Endpoint h p) = show h ++ ":" ++ show p

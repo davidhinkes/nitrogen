@@ -16,10 +16,12 @@ executable nitrogen-server
   main-is: Main.hs
   build-depends: nitrogen,
                  base ==4.6.*,
+                 containers,
                  hstack,
                  simpleargs,
                  snap-server,
-                 stm
+                 stm,
+                 time
 
 library
   exposed-modules: Network.Nitrogen,

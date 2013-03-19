@@ -1,5 +1,6 @@
 module Network.Nitrogen where
 
+import Control.Concurrent
 import Control.Concurrent.Chan
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TVar
@@ -48,8 +49,15 @@ addEndpoint :: UTCTime -> Endpoint -> TVar Context -> STM ()
 addEndpoint expireTime endpoint tvarContext = do
   c <- readTVar tvarContext
   let peerStatus = PeerStatus expireTime
-  let c' = c {status = (insert endpoint peerStatus (status c))}
+  -- Insert, but default to old value.
+  let c' = c {status = (insertWith (\_ x -> x) endpoint peerStatus (status c))}
   writeTVar tvarContext c'
+
+addEndpoints :: UTCTime -> [Endpoint] -> TVar Context -> STM ()
+addEndpoints expireTime (e:es) tvarContext = do
+  addEndpoint expireTime e tvarContext
+  addEndpoints expireTime es tvarContext
+addEndpoints _ [] _ = return ()
 
 getKnownEndpoints :: TVar Context -> STM [Endpoint]
 getKnownEndpoints tvarContext = do
@@ -62,10 +70,44 @@ identifyHandler tvarContext = do
   logicalTime <- liftIO $ atomically $ updateTimeFromNewEvent callerLogicalTime tvarContext
   callerAddr <- getRemoteAddr
   now <- liftIO getCurrentTime
-  -- Add the new endpoint into our context with an immediate expire time.
-  let expireTime = addUTCTime (fromInteger 0) now
   let callerEndpoint = Endpoint (BSChar8.unpack callerAddr) callerPort
-  liftIO $ atomically $ addEndpoint expireTime callerEndpoint tvarContext
+  -- Add the new endpoint into our context with an immediate expire time.
+  liftIO $ atomically $ addEndpoint now callerEndpoint tvarContext
   knownEndpoints <- liftIO $ atomically . getKnownEndpoints $ tvarContext
   let resp = (logicalTime, knownEndpoints)
   return resp
+
+executeChangesToContext :: Port -> [ Endpoint ] -> TVar Context -> IO ()
+executeChangesToContext myPort endpoints tvarContext = do
+  let e:es = endpoints
+  -- The keys are endpoints for all known clients.
+  newLogicalTime <- atomically $ updateTimeFromNewEvent 0 tvarContext
+  let req = (newLogicalTime, myPort)
+  resp <- request identifyDescriptor e req
+  case resp of
+    Ok (respLogicalTime, respKnownEndpoints) -> do
+      now <- getCurrentTime
+      t <- atomically $ do
+        t <- updateTimeFromNewEvent respLogicalTime tvarContext
+        addEndpoints (addUTCTime 30 now) respKnownEndpoints tvarContext
+        return t
+      return ()
+    _ -> print "Bad RPC call."
+  executeChangesToContext myPort es tvarContext
+
+executePerioticProcess :: Int -> TVar Context -> Chan Endpoint -> IO ()
+executePerioticProcess delayInSeconds tvarContext chanEndpoint = do
+  now <- getCurrentTime
+  -- cycle through the Context and find expired endpoints.
+  context <- atomically $ readTVar tvarContext
+  let expiredEndpoints = findExpiredEndpoints now context
+  writeList2Chan chanEndpoint expiredEndpoints
+  print (keys . status $ context)
+  threadDelay (1000000*delayInSeconds)
+  executePerioticProcess delayInSeconds tvarContext chanEndpoint
+
+findExpiredEndpoints :: UTCTime -> Context -> [Endpoint]
+findExpiredEndpoints now context = let
+  allEndpoints = keys (status context)
+  f peerStatus = (expireTime peerStatus) <= now
+  in keys $ Data.Map.filter f (status context)
